@@ -83,7 +83,6 @@ export class App {
 			console.log(lBike)
 		}
 	}
-	/*
 	authenticateUser(id: string, password: string): void{
 		const bcrypt = require('bcrypt')
 		const userIndex = this.users.findIndex(user => user.id === id)
@@ -99,5 +98,5 @@ export class App {
 			throw new Error("User not registered.")
 		}
 	}
- */
+ 
 }  
