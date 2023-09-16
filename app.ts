@@ -100,3 +100,13 @@ export class App {
 	}
  
 }  
+
+    updateBikeLocation(bikeId: string, newLocation: string): void {
+        const bike = this.bikes.find(bike => bike.id === bikeId);
+        if (!bike) {
+            throw new Error('Bike not found.');
+        }
+        bike.location = newLocation;
+    }
+}
+
