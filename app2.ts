@@ -98,5 +98,16 @@ export class App {
 			throw new Error("User not registered.")
 		}
 	}
+	moveBikeTo(bikeId: string, location: Location) {
+    const bike = this.bikes.find(bike => bike.id === bikeId);
+
+    if (!bike) {
+        throw new Error('Bike not found.'); // Lança uma exceção se a bicicleta não for encontrada
+    }
+
+    bike.location.latitude = location.latitude;
+    bike.location.longitude = location.longitude;
+}
+
  
 }  
