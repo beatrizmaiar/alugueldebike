@@ -39,3 +39,25 @@ describe('App', () => {
         return expect(() => app.moveBikeTo(bikeId, newYork)).toThrowError('Bike not found.');
     })
 })
+
+it('should throw rent not found error when rent is not found', async () => {
+        const app = new App()
+        const user = new User('Jose', 'jose@mail.com', '1234')
+        await app.registerUser(user)
+        const bike = new Bike('caloi mountainbike', 'mountain bike',
+            1234, 1234, 100.0, 'My bike', 5, [])
+        app.registerBike(bike)
+        expect(() => {
+            app.returnBike(bike.id!, user.email)
+        }).toThrow(RentNotFoundError)
+    })
+
+    it('should throw duplicated user error when trying to register an existing user', async () => {
+        const app = new App()
+        const user = new User('Jose', 'jose@mail.com', '1234')
+        const duplicateUser = new User('Jose', 'jose@mail.com', '1234')
+        await app.registerUser(user)
+        expect(async () => {
+            await app.registerUser(duplicateUser)
+        }).toThrow(DuplicateUserError)
+    })
