@@ -124,3 +124,15 @@ describe('App', () => {
         await expect(app.findUser(user.email)).resolves.toEqual(user)
     })
 })
+
+it('should throw RentNotFoundError when trying to return a non-existent rent', async () => {
+    const app = new App(userRepo, bikeRepo, rentRepo);
+    const fakeBikeId = 'fake-bike-id';
+    const fakeUserEmail = 'fake-user-email';
+    
+    const rent = await app.rentRepo.findOpen(fakeBikeId, fakeUserEmail);
+    expect(rent).toBeNull(); // Garanta que não existe uma locação
+    
+    await expect(app.returnBike(fakeBikeId, fakeUserEmail)).rejects.toThrow(RentNotFoundError);
+});
+
