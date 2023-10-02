@@ -1,102 +1,103 @@
 import { Bike } from "./bike";
+import { Crypt } from "./crypt";
 import { Rent } from "./rent";
 import { User } from "./user";
-import crypto from 'crypto';
+import { Location } from "./location";
+import { BikeNotFoundError } from "./errors/bike-not-found-error";
+import { UnavailableBikeError } from "./errors/unavailable-bike-error";
+import { UserNotFoundError } from "./errors/user-not-found-error";
+import { DuplicateUserError } from "./errors/duplicate-user-error";
+import { RentRepo } from "./ports/rent-repo";
+import { UserRepo } from "./ports/user-repo";
+import { BikeRepo } from "./ports/bike-repo";
+import { RentNotFoundError } from "./errors/rent-not-found-error";
 
 export class App {
-	public users: User[] = [];
-	public bikes: Bike[] = [];
-	public rents: Rent[] = [];
+    crypt: Crypt = new Crypt()
 
-	findUser(email: string): User | undefined {
-		return this.users.find(user => user.email === email);
-	}
+    constructor(
+        readonly userRepo: UserRepo,
+        readonly bikeRepo: BikeRepo,
+        readonly rentRepo: RentRepo
+    ) {}
 
-	registerUser(user: User): string {
-		for (const rUser of this.users) {
-			if (rUser.email === user.email) {
-				throw new Error('Duplicate user.')
-			}
-		}
-		const newID= crypto.randomUUID();
-		user.id = newID;
-		this.users.push(user);
-     return newID;
-	}
-
-	registerBike(bike: Bike): string {
-		for (const rBike of this.bikes) {
-			if (rBike.id === bike.id) {
-				throw new Error('Duplicate bike.')
-			}
-		}
-    const newID= crypto.randomUUID();
-		bike.id = newID;
-		this.bikes.push(bike);
-     return newID;
-	}
-	removeUser(user: User): void {
-		const index = this.users.findIndex(rUser => rUser.id === user.id);
-		if(index !== -1) {
-			this.users.splice(index, 1);
-		} else {
-			throw new Error('User not found.');
-		}
-	}
-
-	rentBike(user: User, bike: Bike, startDate: Date, endDate: Date): Rent {
-		const rRent = this.rents.find(rent => rent.user.id === user.id && rent.bike.id === bike.id);
-		if(rRent) {
-			throw new Error('This bike is already rented by the user.');
-		}
-        return Rent.create([], bike, user, startDate, endDate)
-	}
-
-	returnBike(user: User, bike: Bike): void {
-		const rent = this.rents.findIndex(rent => rent.user.id === user.id && rent.bike.id === bike.id);
-
-		if(rent !== -1) {
-			this.rents.splice(rent, 1);
-		} else {
-			throw new Error('This bike is not rented by the user.');
-		}
+    async findUser(email: string): Promise<User> {
+        const user = await this.userRepo.find(email)
+        if (!user) throw new UserNotFoundError()
+        return user
     }
 
-	userListing(): void {
-		const bcrypt = require('bcrypt')
-		const saltRounds = 12
-		for (const lUser of this.users) {
-			const hash = bcrypt.hashSync(lUser.password, saltRounds)
-			lUser.password = hash
-			console.log(lUser)
-		}
-	}
-	
-	rentListing(): void {
-		for (const lRent of this.rents) {
-			console.log(lRent)
-		}
-	}
-	
-	bikeListing(): void {
-		for (const lBike of this.bikes) {
-			console.log(lBike)
-		}
-	}
-	authenticateUser(id: string, password: string): void{
-		const bcrypt = require('bcrypt')
-		const userIndex = this.users.findIndex(user => user.id === id)
-		if(userIndex === -1){
-			const user = this.users[userIndex];
-			const correct = bcrypt.compareSync(password, user.password)
-			if(correct){
-				console.log('User successfully authenticated.')
-			}else{
-				throw new Error('Incorrect ID or password.')
-			}
-		}else{
-			throw new Error("User not registered.")
-		}
-	}
- 
-}  
+    async registerUser(user: User): Promise<string> {
+        if (await this.userRepo.find(user.email)) {
+          throw new DuplicateUserError()
+        }
+        const encryptedPassword = await this.crypt.encrypt(user.password)
+        user.password = encryptedPassword
+        return await this.userRepo.add(user)
+    }
+
+    async authenticate(userEmail: string, password: string): Promise<boolean> {
+        const user = await this.findUser(userEmail)
+        return await this.crypt.compare(password, user.password)
+    }
+
+    async registerBike(bike: Bike): Promise<string> {
+        return await this.bikeRepo.add(bike)
+    }
+
+    async removeUser(email: string): Promise<void> {
+        await this.findUser(email)
+        await this.userRepo.remove(email)
+    }
+    
+    async rentBike(bikeId: string, userEmail: string): Promise<string> {
+        const bike = await this.findBike(bikeId)
+        if (!bike.available) {
+            throw new UnavailableBikeError()
+        }
+        const user = await this.findUser(userEmail)
+        bike.available = false
+        await this.bikeRepo.update(bikeId, bike)
+        const newRent = new Rent(bike, user, new Date())
+        return await this.rentRepo.add(newRent)
+    }
+
+    async returnBike(bikeId: string, userEmail: string): Promise<number> {
+    const now = new Date();
+    const rent = await this.rentRepo.findOpen(bikeId, userEmail);
+    if (!rent) throw new RentNotFoundError(); // Usando a exceção específica
+    rent.end = now;
+    await this.rentRepo.update(rent.id, rent);
+    rent.bike.available = true;
+    await this.bikeRepo.update(rent.bike.id, rent.bike);
+    const hours = diffHours(rent.end, rent.start);
+    return hours * rent.bike.rate;
+}
+
+    async listUsers(): Promise<User[]> {
+        return await this.userRepo.list()
+    }
+
+    async listBikes(): Promise<Bike[]> {
+        return await this.bikeRepo.list()
+    }
+
+    async moveBikeTo(bikeId: string, location: Location) {
+        const bike = await this.findBike(bikeId)
+        bike.location.latitude = location.latitude
+        bike.location.longitude = location.longitude
+        await this.bikeRepo.update(bikeId, bike)
+    }
+
+    async findBike(bikeId: string): Promise<Bike> {
+        const bike = await this.bikeRepo.find(bikeId)
+        if (!bike) throw new BikeNotFoundError()
+        return bike
+    }
+}
+
+function diffHours(dt2: Date, dt1: Date) {
+  var diff = (dt2.getTime() - dt1.getTime()) / 1000;
+  diff /= (60 * 60);
+  return Math.abs(diff);
+}
